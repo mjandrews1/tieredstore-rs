@@ -1,19 +1,23 @@
-//! LRU cache with access-order tracking.
+//! LRU cache with access-order tracking and dirty-page flush on eviction.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct LruCache {
     map: HashMap<String, String>,
     order: VecDeque<String>,
     max_size: usize,
+    disk: sled::Db,
+    dirty: HashSet<String>,
 }
 
 impl LruCache {
-    pub fn new(max_size: usize) -> Self {
+    pub fn new(max_size: usize, disk: sled::Db) -> Self {
         Self {
             map: HashMap::new(),
             order: VecDeque::new(),
             max_size,
+            disk,
+            dirty: HashSet::new(),
         }
     }
 
@@ -33,14 +37,23 @@ impl LruCache {
         }
         self.map.insert(key, value);
 
-        // Evict if over limit
+        // Evict if over limit — flush dirty pages first (evictionSafety)
         while self.map.len() > self.max_size {
-            self.evict_oldest();
+            self.evict_oldest_with_flush();
         }
+    }
+
+    pub fn mark_dirty(&mut self, key: &str) {
+        self.dirty.insert(key.to_string());
+    }
+
+    pub fn clear_dirty(&mut self) {
+        self.dirty.clear();
     }
 
     pub fn remove(&mut self, key: &str) {
         self.map.remove(key);
+        self.dirty.remove(key);
         if let Some(pos) = self.order.iter().position(|k| k == key) {
             self.order.remove(pos);
         }
@@ -56,20 +69,12 @@ impl LruCache {
         }
     }
 
-    pub fn contains_key(&self, key: &str) -> bool {
-        self.map.contains_key(key)
-    }
-
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
-    }
-
-    pub fn keys(&self) -> Vec<&String> {
-        self.map.keys().collect()
     }
 
     fn touch(&mut self, key: &str) {
@@ -79,9 +84,19 @@ impl LruCache {
         }
     }
 
-    fn evict_oldest(&mut self) {
-        if let Some(key) = self.order.pop_front() {
-            self.map.remove(&key);
+    /// Evict oldest key. Flush dirty pages before eviction.
+    fn evict_oldest_with_flush(&mut self) {
+        let key = match self.order.pop_front() {
+            Some(k) => k,
+            None => return,
+        };
+        // If dirty, flush to disk before evicting (evictionSafety)
+        if self.dirty.contains(&key) {
+            if let Some(val) = self.map.get(&key) {
+                let _ = self.disk.insert(key.as_bytes(), val.as_bytes());
+            }
+            self.dirty.remove(&key);
         }
+        self.map.remove(&key);
     }
 }

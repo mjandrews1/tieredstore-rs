@@ -35,8 +35,9 @@ impl TieredStore {
         let disk = sled::open(disk_path)?;
         let wal = WriteAheadLog::new(wal_path, fsync_interval_ms)?;
 
+        let disk_clone = disk.clone();
         let store = Self {
-            cache: Arc::new(Mutex::new(LruCache::new(max_cache_size))),
+            cache: Arc::new(Mutex::new(LruCache::new(max_cache_size, disk_clone))),
             dirty: Arc::new(Mutex::new(HashSet::new())),
             disk,
             wal: Some(Mutex::new(wal)),
@@ -61,8 +62,9 @@ impl TieredStore {
         }
         let disk = sled::open(&snapshot_path)?;
 
+        let disk_clone2 = disk.clone();
         Ok(Self {
-            cache: Arc::new(Mutex::new(LruCache::new(10000))),
+            cache: Arc::new(Mutex::new(LruCache::new(10000, disk_clone2))),
             dirty: Arc::new(Mutex::new(HashSet::new())),
             disk,
             wal: None,
@@ -106,6 +108,7 @@ impl TieredStore {
         {
             let mut cache = self.cache.lock().unwrap();
             cache.insert(key.to_string(), value.to_string());
+            cache.mark_dirty(key);
         }
         {
             let mut dirty = self.dirty.lock().unwrap();
