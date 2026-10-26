@@ -46,11 +46,13 @@ fn test_write_ahead_property() {
     let disk = format!("{}/prop-wa-{}.db", tmp.display(), std::process::id());
     let wal = format!("{}.wal", disk);
 
-    let mut store = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
+    let store = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
 
     // Write several keys
     for i in 0..10 {
-        store.set(&format!("KEY{}", i), &format!("VAL{}", i)).unwrap();
+        store
+            .set(&format!("KEY{}", i), &format!("VAL{}", i))
+            .unwrap();
     }
     store.increment("COUNTER", 1.0).unwrap();
     store.kill("KEY5").unwrap();
@@ -67,8 +69,12 @@ fn test_write_ahead_property() {
         let expected = format!("VAL{}", i);
         if i != 5 {
             // KEY5 was killed
-            assert_eq!(store2.get(&format!("KEY{}", i)), Some(expected),
-                "WAL recovered KEY{}", i);
+            assert_eq!(
+                store2.get(&format!("KEY{}", i)),
+                Some(expected),
+                "WAL recovered KEY{}",
+                i
+            );
         }
     }
     println!("test_write_ahead_property OK");
@@ -82,7 +88,7 @@ fn test_wal_replay_correctness() {
 
     // Write, close (WAL persists)
     {
-        let mut store = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
+        let store = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
         store.set("A", "1").unwrap();
         store.set("B", "2").unwrap();
         store.set("A", "3").unwrap(); // overwrite
@@ -128,7 +134,11 @@ fn test_crash_safety() {
             }
         }
         // At most 1 write loss allowed (the one being WAL'd at crash)
-        assert!(recovered >= 99, "at most 1 write loss: {}/100 recovered", recovered);
+        assert!(
+            recovered >= 99,
+            "at most 1 write loss: {}/100 recovered",
+            recovered
+        );
     }
     println!("test_crash_safety OK");
 }
@@ -141,7 +151,7 @@ fn test_eviction_safety() {
     let wal = format!("{}.wal", disk);
 
     // Small cache to force eviction
-    let mut store = TieredStore::new(&disk, &wal, 5, 100).unwrap();
+    let store = TieredStore::new(&disk, &wal, 5, 100).unwrap();
 
     // Fill cache beyond capacity
     for i in 0..20 {
@@ -154,8 +164,12 @@ fn test_eviction_safety() {
 
     let store2 = TieredStore::new(&disk, &wal, 5, 100).unwrap();
     for i in 0..20 {
-        assert_eq!(store2.get(&format!("E{}", i)), Some(format!("V{}", i)),
-            "evicted key E{} preserved", i);
+        assert_eq!(
+            store2.get(&format!("E{}", i)),
+            Some(format!("V{}", i)),
+            "evicted key E{} preserved",
+            i
+        );
     }
     println!("test_eviction_safety OK");
 }
@@ -222,7 +236,7 @@ fn test_snapshot_consistency() {
     let wal = format!("{}.wal", disk);
 
     // Writer writes
-    let mut writer = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
+    let writer = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
     writer.set("A", "1").unwrap();
     writer.set("B", "2").unwrap();
     writer.flush().unwrap();
@@ -251,11 +265,19 @@ fn test_consistency_after_set() {
 
     // Set and verify consistency
     store.set("A", "1").unwrap();
-    assert_eq!(store.get("A"), Some("1".to_string()), "consistency after set");
+    assert_eq!(
+        store.get("A"),
+        Some("1".to_string()),
+        "consistency after set"
+    );
 
     // Overwrite
     store.set("A", "2").unwrap();
-    assert_eq!(store.get("A"), Some("2".to_string()), "consistency after overwrite");
+    assert_eq!(
+        store.get("A"),
+        Some("2".to_string()),
+        "consistency after overwrite"
+    );
 
     // Increment
     store.set("N", "10").unwrap();
@@ -272,7 +294,7 @@ fn test_consistency_after_flush() {
     let disk = format!("{}/prop-flush-{}.db", tmp.display(), std::process::id());
     let wal = format!("{}.wal", disk);
 
-    let mut store = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
+    let store = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
 
     // Write and flush
     for i in 0..50 {
@@ -282,16 +304,24 @@ fn test_consistency_after_flush() {
 
     // Verify all data preserved after flush
     for i in 0..50 {
-        assert_eq!(store.get(&format!("F{}", i)), Some(format!("V{}", i)),
-            "consistency after flush F{}", i);
+        assert_eq!(
+            store.get(&format!("F{}", i)),
+            Some(format!("V{}", i)),
+            "consistency after flush F{}",
+            i
+        );
     }
 
     // Reopen and verify persistence
     drop(store);
     let store2 = TieredStore::new(&disk, &wal, 10000, 100).unwrap();
     for i in 0..50 {
-        assert_eq!(store2.get(&format!("F{}", i)), Some(format!("V{}", i)),
-            "persistence after flush F{}", i);
+        assert_eq!(
+            store2.get(&format!("F{}", i)),
+            Some(format!("V{}", i)),
+            "persistence after flush F{}",
+            i
+        );
     }
 
     println!("test_consistency_after_flush OK");

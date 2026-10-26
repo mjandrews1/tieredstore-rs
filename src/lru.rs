@@ -60,7 +60,9 @@ impl LruCache {
     }
 
     pub fn remove_prefix(&mut self, prefix: &str) {
-        let keys_to_remove: Vec<String> = self.map.keys()
+        let keys_to_remove: Vec<String> = self
+            .map
+            .keys()
             .filter(|k| k.starts_with(prefix))
             .cloned()
             .collect();

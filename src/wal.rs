@@ -6,7 +6,6 @@
 //! Entry format (binary):
 //!   magic(4B) | seq(8B) | op(1B) | keyLen(2B) | valLen(4B) | key | val | crc(4B)
 
-use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -38,10 +37,7 @@ pub struct WriteAheadLog {
 
 impl WriteAheadLog {
     pub fn new(path: &str, fsync_interval_ms: u64) -> std::io::Result<Self> {
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let file = OpenOptions::new().create(true).append(true).open(path)?;
 
         // Scan existing entries to find next sequence
         let next_seq = Self::scan_next_seq(path)? + 1;
@@ -144,12 +140,13 @@ impl WriteAheadLog {
             }
 
             let seq = u64::from_be_bytes([
-                header[4], header[5], header[6], header[7],
-                header[8], header[9], header[10], header[11],
+                header[4], header[5], header[6], header[7], header[8], header[9], header[10],
+                header[11],
             ]);
             let op_byte = header[12];
             let key_len = u16::from_be_bytes([header[13], header[14]]) as usize;
-            let val_len = u32::from_be_bytes([header[15], header[16], header[17], header[18]]) as usize;
+            let val_len =
+                u32::from_be_bytes([header[15], header[16], header[17], header[18]]) as usize;
 
             // Read key + value + crc
             let payload_size = key_len + val_len + CRC_SIZE;
@@ -235,15 +232,16 @@ impl WriteAheadLog {
             }
 
             let seq = u64::from_be_bytes([
-                header[4], header[5], header[6], header[7],
-                header[8], header[9], header[10], header[11],
+                header[4], header[5], header[6], header[7], header[8], header[9], header[10],
+                header[11],
             ]);
             if seq > max_seq {
                 max_seq = seq;
             }
 
             let key_len = u16::from_be_bytes([header[13], header[14]]) as usize;
-            let val_len = u32::from_be_bytes([header[15], header[16], header[17], header[18]]) as usize;
+            let val_len =
+                u32::from_be_bytes([header[15], header[16], header[17], header[18]]) as usize;
             let skip = key_len + val_len + CRC_SIZE;
             reader.seek(SeekFrom::Current(skip as i64))?;
         }

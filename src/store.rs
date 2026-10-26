@@ -15,7 +15,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::lru::LruCache;
-use crate::wal::{Entry, Op, WriteAheadLog};
+use crate::wal::{Op, WriteAheadLog};
 
 pub struct TieredStore {
     cache: Arc<Mutex<LruCache>>,
@@ -30,8 +30,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 impl TieredStore {
     /// Open TieredStore in write mode (single writer).
-    pub fn new(disk_path: &str, wal_path: &str, max_cache_size: usize,
-               fsync_interval_ms: u64) -> std::io::Result<Self> {
+    pub fn new(
+        disk_path: &str,
+        wal_path: &str,
+        max_cache_size: usize,
+        fsync_interval_ms: u64,
+    ) -> std::io::Result<Self> {
         let disk = sled::open(disk_path)?;
         let wal = WriteAheadLog::new(wal_path, fsync_interval_ms)?;
 
@@ -100,8 +104,10 @@ impl TieredStore {
     /// Set value. Fails in read-only mode.
     pub fn set(&self, key: &str, value: &str) -> std::io::Result<()> {
         if self.read_only {
-            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied,
-                "TieredStore is read-only"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "TieredStore is read-only",
+            ));
         }
         self.ops.fetch_add(1, Ordering::Relaxed);
         // Write to cache
@@ -125,8 +131,10 @@ impl TieredStore {
     /// Kill key and descendants. Fails in read-only mode.
     pub fn kill(&self, key: &str) -> std::io::Result<()> {
         if self.read_only {
-            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied,
-                "TieredStore is read-only"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "TieredStore is read-only",
+            ));
         }
         self.ops.fetch_add(1, Ordering::Relaxed);
         // Remove from cache
@@ -152,12 +160,17 @@ impl TieredStore {
     /// Atomic increment. Fails in read-only mode.
     pub fn increment(&self, key: &str, amount: f64) -> std::io::Result<f64> {
         if self.read_only {
-            return Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied,
-                "TieredStore is read-only"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "TieredStore is read-only",
+            ));
         }
         self.ops.fetch_add(1, Ordering::Relaxed);
         // Read current value
-        let current = self.get(key).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+        let current = self
+            .get(key)
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(0.0);
         let next = current + amount;
         let next_str = format!("{}", next as i64);
         self.set(key, &next_str)?;
@@ -176,7 +189,8 @@ impl TieredStore {
         // Collect values from cache
         let kv_pairs: Vec<(String, String)> = {
             let mut cache = self.cache.lock().unwrap();
-            dirty_keys.iter()
+            dirty_keys
+                .iter()
                 .filter_map(|k| cache.get(k).map(|v| (k.clone(), v)))
                 .collect()
         };
@@ -203,7 +217,7 @@ impl TieredStore {
         }
         self.flush()?;
         if let Some(ref mut wal) = self.wal {
-            let mut wal = wal.lock().unwrap();
+            let wal = wal.get_mut().unwrap();
             wal.fsync()?;
         }
         Ok(())
@@ -257,7 +271,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
         if path.is_dir() {
             copy_dir_recursive(&path, &dst.join(entry.file_name()))?;
         } else {
-            std::fs::copy(&path, &dst.join(entry.file_name()))?;
+            std::fs::copy(&path, dst.join(entry.file_name()))?;
         }
     }
     Ok(())
