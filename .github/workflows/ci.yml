@@ -28,5 +28,8 @@ jobs:
       - name: Format check
         run: cargo fmt --check
 
+      - name: Property tests (cargo test)
+        run: cargo test
+
       - name: Property verification (Dafny lemma mapping)
         run: cargo run --release

@@ -1,6 +1,7 @@
 //! TieredStore: LRU cache + disk backing + WAL crash recovery.
 
 pub mod lru;
+pub mod property;
 pub mod store;
 pub mod wal;
 

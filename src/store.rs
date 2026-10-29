@@ -154,6 +154,30 @@ impl TieredStore {
             let mut wal = wal.lock().unwrap();
             wal.append_kill(key)?;
         }
+        // Delete from disk (write-ahead order preserved: WAL first). Without
+        // this, a key already flushed to disk survives the kill and
+        // resurrects on the next read or reopen — TieredStore.dfy's replay
+        // semantics ("KILL operations remove keys") require the disk copy
+        // gone too.
+        self.delete_key_from_disk(key)?;
+        Ok(())
+    }
+
+    /// Remove a key (and its subscripted children, "key\x01...") from the
+    /// disk backing. Propagates sled errors — never swallowed.
+    fn delete_key_from_disk(&self, key: &str) -> std::io::Result<()> {
+        self.disk.remove(key)?;
+        let pfx = format!("{}{}", key, '\x01');
+        let mut subkeys = Vec::new();
+        for item in self.disk.iter() {
+            let (k, _) = item?;
+            if k.starts_with(pfx.as_bytes()) {
+                subkeys.push(k);
+            }
+        }
+        for k in subkeys {
+            self.disk.remove(k)?;
+        }
         Ok(())
     }
 
@@ -255,6 +279,15 @@ impl TieredStore {
                         dirty.remove(&key);
                         let pfx = format!("{}{}", key, '\x01');
                         cache.remove_prefix(&pfx);
+                        // TieredStore.dfy: "KILL operations remove keys" —
+                        // the replayed state must not contain the key, so the
+                        // disk copy is deleted, not just the cache copy
+                        // (kills of already-flushed keys used to resurrect).
+                        drop(cache);
+                        drop(dirty);
+                        self.delete_key_from_disk(&key)?;
+                        cache = self.cache.lock().unwrap();
+                        dirty = self.dirty.lock().unwrap();
                     }
                 }
             }

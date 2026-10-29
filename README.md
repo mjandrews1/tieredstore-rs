@@ -29,29 +29,45 @@ verification matching the Dafny specification in
 | `src/lru.rs` | LRU cache with access-order tracking, dirty-page flush on eviction |
 | `src/wal.rs` | Write-ahead log: entries, ops, CRC32 integrity |
 | `src/store.rs` | `TieredStore` — cache + disk + WAL coordination |
-| `src/main.rs` | Property-verification driver (9 tests, one per Dafny lemma) |
+| `src/property.rs` | Property verification (11 scenario tests mapped to Dafny lemmas) |
+| `src/main.rs` | Driver — runs the same checks for CI/human inspection |
+| `tests/random_ops.rs` | Randomized property test (proptest): random SET/KILL sequences vs a reference model |
 
 ## Property verification
 
-Each test in `src/main.rs` maps to a Dafny lemma in `TieredStore.dfy`:
+Each scenario test in `src/property.rs` maps to a Dafny lemma in `TieredStore.dfy`:
 
 | Test | Dafny lemma |
 |---|---|
 | `test_write_ahead_property` | WriteAheadProperty (cache ⊆ WAL) |
 | `test_wal_replay_correctness` | replayRecoversSetOps |
+| `test_wal_keys_append` | walKeysAppend + lastValueForPreserves (log growth, last-SET-wins) |
+| `test_kill_of_evicted_key` | appendKillPreservesWriteAhead — "KILL operations remove keys" (regression: kills of disk-resident keys) |
 | `test_crash_safety` | crashSafety (max 1 write loss) |
 | `test_eviction_safety` | evictionSafety (dirty pages flushed before eviction) |
-| `test_read_only_safety` | ReadOnlySafe (read-only rejects writes) |
-| `test_single_writer_exclusivity` | WriterExclusive |
+| `test_read_only_safety` | readOnlyRejectsSet/Kill/Increment + readOnlyAllowsGet |
+| `test_single_writer_exclusivity` | WriterExclusive + writerRelease + concurrentWritersAtMostOne + writerReaderCoexist |
 | `test_snapshot_consistency` | SnapshotConsistent (no phantom data) |
 | `test_consistency_after_set` | set/get round-trip |
 | `test_consistency_after_flush` | flush preserves data; persistence across reopen |
 
-Run:
+The randomized test (`tests/random_ops.rs`) generates random SET/KILL sequences over
+a 12-key space with a 4-entry cache (forcing evictions), applies them to the store and
+a `BTreeMap` reference model, then verifies — after flush + reopen — that the store
+state equals the model exactly.
+
+Run (both run the same scenario checks; CI runs both plus the randomized test):
 
 ```bash
-cargo run
+cargo test
+cargo run --release
 ```
+
+**Bug found by the randomized test on its first run (2026-10-29):** `kill()` and WAL
+replay removed the key from the cache but never from the disk backing, so a KILL of an
+already-evicted key resurrected its value on read or reopen — a violation of the
+TieredStore.dfy replay semantics. Fixed with write-ahead-ordered disk deletion in both
+`kill()` and `replay_wal()`.
 
 All 9 must print OK (asserts panic on failure → non-zero exit). CI runs the
 same driver on every push/PR.
